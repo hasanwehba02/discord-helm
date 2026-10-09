@@ -1,0 +1,31 @@
+{
+  "name": "discord-llm",
+  "version": "0.1.0",
+  "description": "Discord bot for chatting with local LLMs (OpenAI-compatible), with per-thread sessions.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "discord.js": "14.27.0",
+    "dotenv": "16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@typescript-eslint/eslint-plugin": "8.46.1",
+    "@typescript-eslint/parser": "8.46.1",
+    "eslint": "9.39.0",
+    "prettier": "3.4.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}
