@@ -13,4 +13,5 @@ export const config = {
   discordClientId: required('DISCORD_CLIENT_ID'),
   // Optional: when set, slash commands register to this guild only (fast dev).
   discordGuildId: process.env.DISCORD_GUILD_ID?.trim() || undefined,
+  dbPath: process.env.DB_PATH?.trim() || './data/discord-llm.sqlite',
 } as const;

@@ -1,5 +1,6 @@
 import { ChannelType, Events, type Client, type Message } from 'discord.js';
 import type { EventModule } from './types.js';
+import { insertMessage } from '../db/messages.js';
 
 interface MessageInput {
   authorId: string;
@@ -57,16 +58,34 @@ async function handleInThread(message: Message, botId: string): Promise<void> {
   if (channel.ownerId !== botId) return;
 
   const text = stripMention(message.content, botId);
-  await channel.send(
-    formatReply(
-      {
-        authorId: message.author.id,
-        authorName: message.author.displayName,
-        text,
-      },
-      undefined,
-    ),
+
+  insertMessage({
+    threadId: channel.id,
+    discordId: message.id,
+    role: 'user',
+    authorId: message.author.id,
+    authorName: message.author.displayName,
+    content: text,
+    createdAt: message.createdTimestamp,
+  });
+
+  const reply = formatReply(
+    {
+      authorId: message.author.id,
+      authorName: message.author.displayName,
+      text,
+    },
+    undefined,
   );
+  const sent = await channel.send(reply);
+
+  insertMessage({
+    threadId: channel.id,
+    discordId: sent.id,
+    role: 'assistant',
+    content: reply,
+    createdAt: sent.createdTimestamp,
+  });
 }
 
 async function handleInChannel(message: Message, botId: string): Promise<void> {
@@ -81,7 +100,27 @@ async function handleInChannel(message: Message, botId: string): Promise<void> {
 
   const repliedTo = await resolveRepliedTo(message);
   const thread = await message.startThread({ name: resolveThreadName(input, repliedTo) });
-  await thread.send(formatReply(input, repliedTo));
+
+  insertMessage({
+    threadId: thread.id,
+    discordId: message.id,
+    role: 'user',
+    authorId: input.authorId,
+    authorName: input.authorName,
+    content: formatReply(input, repliedTo),
+    createdAt: message.createdTimestamp,
+  });
+
+  const reply = formatReply(input, repliedTo);
+  const sent = await thread.send(reply);
+
+  insertMessage({
+    threadId: thread.id,
+    discordId: sent.id,
+    role: 'assistant',
+    content: reply,
+    createdAt: sent.createdTimestamp,
+  });
 }
 
 async function onMessageCreate(client: Client, message: Message): Promise<void> {
