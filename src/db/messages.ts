@@ -1,5 +1,6 @@
+import { desc, eq } from 'drizzle-orm';
 import { getDb } from './index.js';
-import { messages, type NewMessageRow } from './schema.js';
+import { messages, type MessageRow, type NewMessageRow } from './schema.js';
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -25,4 +26,16 @@ export function insertMessage(message: StoredMessage): void {
   };
 
   getDb().insert(messages).values(row).onConflictDoNothing().run();
+}
+
+export function getThreadMessages(threadId: string, limit = 40): MessageRow[] {
+  const rows = getDb()
+    .select()
+    .from(messages)
+    .where(eq(messages.threadId, threadId))
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(limit)
+    .all();
+
+  return rows.reverse();
 }
