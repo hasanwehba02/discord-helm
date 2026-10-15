@@ -10,6 +10,7 @@ import { insertMessage } from '../db/messages.js';
 import { buildContext } from '../context/context.js';
 import { toChatMessages } from '../context/to-chat-messages.js';
 import { getProvider } from '../llm/index.js';
+import { enqueue } from '../llm/queue.js';
 
 interface MessageInput {
   authorId: string;
@@ -64,9 +65,14 @@ function formatReply(input: MessageInput, repliedTo: MessageInput | undefined): 
   return 'empty';
 }
 
-async function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
+async function generateReply(channel: SendableChannels, threadId: string): Promise<void> {
   const context = buildContext(threadId, { system: SYSTEM_PROMPT });
   const messages = toChatMessages(context);
+
+  await channel.sendTyping();
+  const typing = setInterval(() => {
+    void channel.sendTyping().catch(() => undefined);
+  }, 8000);
 
   let reply: string;
   try {
@@ -75,6 +81,8 @@ async function generateAndSend(channel: SendableChannels, threadId: string): Pro
     console.error('LLM request failed:', err);
     await channel.send(`LLM request failed: ${err}`);
     return;
+  } finally {
+    clearInterval(typing);
   }
 
   const sent = await channel.send(reply);
@@ -86,6 +94,10 @@ async function generateAndSend(channel: SendableChannels, threadId: string): Pro
     content: reply,
     createdAt: sent.createdTimestamp,
   });
+}
+
+function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
+  return enqueue(threadId, () => generateReply(channel, threadId));
 }
 
 async function handleInThread(message: Message, botId: string): Promise<void> {
