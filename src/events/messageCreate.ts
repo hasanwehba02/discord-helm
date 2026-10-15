@@ -1,6 +1,15 @@
-import { ChannelType, Events, type Client, type Message } from 'discord.js';
+import {
+  ChannelType,
+  Events,
+  type Client,
+  type Message,
+  type SendableChannels,
+} from 'discord.js';
 import type { EventModule } from './types.js';
 import { insertMessage } from '../db/messages.js';
+import { buildContext } from '../context/context.js';
+import { toChatMessages } from '../context/to-chat-messages.js';
+import { getProvider } from '../llm/index.js';
 
 interface MessageInput {
   authorId: string;
@@ -9,6 +18,9 @@ interface MessageInput {
 }
 
 const THREAD_NAME_MAX = 100;
+const SYSTEM_PROMPT =
+  'You are a helpful assistant chatting with one or more Discord users. ' +
+  'Each user message is prefixed with the speaker name. Reply concisely.';
 
 function stripMention(content: string, botId: string): string {
   return content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
@@ -52,6 +64,30 @@ function formatReply(input: MessageInput, repliedTo: MessageInput | undefined): 
   return 'empty';
 }
 
+async function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
+  const context = buildContext(threadId, { system: SYSTEM_PROMPT });
+  const messages = toChatMessages(context);
+
+  let reply: string;
+  try {
+    reply = await getProvider().chat(messages);
+  } catch (err) {
+    console.error('LLM request failed:', err);
+    await channel.send(`LLM request failed: ${err}`);
+    return;
+  }
+
+  const sent = await channel.send(reply);
+
+  insertMessage({
+    threadId,
+    discordId: sent.id,
+    role: 'assistant',
+    content: reply,
+    createdAt: sent.createdTimestamp,
+  });
+}
+
 async function handleInThread(message: Message, botId: string): Promise<void> {
   const channel = message.channel;
   if (!channel.isThread()) return;
@@ -69,23 +105,7 @@ async function handleInThread(message: Message, botId: string): Promise<void> {
     createdAt: message.createdTimestamp,
   });
 
-  const reply = formatReply(
-    {
-      authorId: message.author.id,
-      authorName: message.author.displayName,
-      text,
-    },
-    undefined,
-  );
-  const sent = await channel.send(reply);
-
-  insertMessage({
-    threadId: channel.id,
-    discordId: sent.id,
-    role: 'assistant',
-    content: reply,
-    createdAt: sent.createdTimestamp,
-  });
+  await generateAndSend(channel, channel.id);
 }
 
 async function handleInChannel(message: Message, botId: string): Promise<void> {
@@ -111,16 +131,7 @@ async function handleInChannel(message: Message, botId: string): Promise<void> {
     createdAt: message.createdTimestamp,
   });
 
-  const reply = formatReply(input, repliedTo);
-  const sent = await thread.send(reply);
-
-  insertMessage({
-    threadId: thread.id,
-    discordId: sent.id,
-    role: 'assistant',
-    content: reply,
-    createdAt: sent.createdTimestamp,
-  });
+  await generateAndSend(thread, thread.id);
 }
 
 async function onMessageCreate(client: Client, message: Message): Promise<void> {
