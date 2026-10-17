@@ -10,7 +10,7 @@ cp .env.example .env   # fill in your values
 npm run dev
 ```
 
-Requires Node.js >= 20 and an OpenAI-compatible LLM endpoint. See the [README](./README.md) for environment variables.
+Requires Node.js >= 22 and an OpenAI-compatible LLM endpoint. See the [README](./README.md) for environment variables.
 
 ## Pull Requests
 
