@@ -1,4 +1,4 @@
-# discord-llm
+# discord-helm
 
 LLMがBotとしてDiscordを操作するためのインターフェースで、Discordへの作用をツールとして提供しています。
 OpenAI 互換 API に対応。
@@ -13,8 +13,8 @@ OpenAI 互換 API に対応。
 ## セットアップ
 
 ```bash
-git clone https://github.com/ritzowo/discord-llm.git
-cd discord-llm
+git clone https://github.com/ritzowo/discord-helm.git
+cd discord-helm
 npm install
 cp .env.example .env   # 各値を設定
 npm run dev
@@ -34,7 +34,7 @@ npm run dev
 | `LLM_API_KEY` | | API キー（必要なバックエンドの場合） |
 | `LLM_TEMPERATURE` | | 指定時のみリクエストに付与（未指定ならサーバー既定に委ねる） |
 | `LLM_TIMEOUT_MS` | | LLM リクエストのタイムアウト（ミリ秒、既定: `120000`） |
-| `DB_PATH` | | SQLite ファイルのパス（既定: `./data/discord-llm.sqlite`） |
+| `DB_PATH` | | SQLite ファイルのパス（既定: `./data/discord-helm.sqlite`） |
 
 ## Scripts
 

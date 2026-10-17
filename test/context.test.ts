@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const tempDir = mkdtempSync(join(tmpdir(), 'discord-llm-test-'));
+const tempDir = mkdtempSync(join(tmpdir(), 'discord-helm-test-'));
 process.env.DB_PATH = join(tempDir, 'test.sqlite');
 process.env.LLM_MODEL = 'test-model';
 process.env.DISCORD_TOKEN = 'test-token';
