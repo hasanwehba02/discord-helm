@@ -1,5 +1,5 @@
 {
-  "name": "discord-llm",
+  "name": "discord-helm",
   "version": "0.1.0",
   "description": "Discord bot for chatting with local LLMs (OpenAI-compatible), with per-thread sessions.",
   "license": "MIT",

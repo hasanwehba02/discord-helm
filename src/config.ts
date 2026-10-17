@@ -23,7 +23,7 @@ export const config = {
   discordClientId: required('DISCORD_CLIENT_ID'),
   // Optional: when set, slash commands register to this guild only (fast dev).
   discordGuildId: process.env.DISCORD_GUILD_ID?.trim() || undefined,
-  dbPath: process.env.DB_PATH?.trim() || './data/discord-llm.sqlite',
+  dbPath: process.env.DB_PATH?.trim() || './data/discord-helm.sqlite',
   llmBaseUrl: process.env.LLM_BASE_URL?.trim() || 'http://localhost:11434/v1',
   llmModel: required('LLM_MODEL'),
   llmApiKey: process.env.LLM_API_KEY?.trim() || undefined,
