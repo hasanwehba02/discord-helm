@@ -11,6 +11,7 @@ export function getProvider(): LLMProvider {
     model: config.llmModel,
     apiKey: config.llmApiKey,
     temperature: config.llmTemperature,
+    timeoutMs: config.llmTimeoutMs,
   });
   return instance;
 }

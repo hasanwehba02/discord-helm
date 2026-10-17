@@ -10,6 +10,9 @@ import { insertMessage } from '../db/messages.js';
 import { buildContext } from '../context/context.js';
 import { toChatMessages } from '../context/to-chat-messages.js';
 import { getProvider } from '../llm/index.js';
+import { enqueue } from '../llm/queue.js';
+import { dispatchTool, ackPhaseTools, replyPhaseTools, type ToolContext } from '../llm/tools.js';
+import type { ChatMessage } from '../llm/provider.js';
 
 interface MessageInput {
   authorId: string;
@@ -18,9 +21,14 @@ interface MessageInput {
 }
 
 const THREAD_NAME_MAX = 100;
+const MAX_AGENT_ROUNDS = 5;
 const SYSTEM_PROMPT =
   'You are a helpful assistant chatting with one or more Discord users. ' +
-  'Each user message is prefixed with the speaker name. Reply concisely.';
+  'Each user message is prefixed with the speaker name. Reply concisely. ' +
+  'You reply in two steps. First, decide whether to send a short heads-up: ' +
+  'call acknowledge(note) if the answer will be long or take time, otherwise call proceed. ' +
+  'Then send your full answer with the send_message tool. ' +
+  'You can only send messages through these tools.';
 
 function stripMention(content: string, botId: string): string {
   return content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
@@ -64,28 +72,71 @@ function formatReply(input: MessageInput, repliedTo: MessageInput | undefined): 
   return 'empty';
 }
 
-async function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
+async function generateReply(channel: SendableChannels, threadId: string): Promise<void> {
   const context = buildContext(threadId, { system: SYSTEM_PROMPT });
-  const messages = toChatMessages(context);
+  const messages: ChatMessage[] = toChatMessages(context);
 
-  let reply: string;
+  await channel.sendTyping();
+  const typing = setInterval(() => {
+    void channel.sendTyping().catch(() => undefined);
+  }, 8000);
+
+  const persist = (content: string, messageId: string, createdAt: number): void => {
+    insertMessage({ threadId, discordId: messageId, role: 'assistant', content, createdAt });
+  };
+  const ctx = { channel, onSent: persist };
+
   try {
-    reply = await getProvider().chat(messages);
+    await runAckPhase(messages, ctx);
+    await runReplyPhase(messages, ctx, threadId);
   } catch (err) {
     console.error('LLM request failed:', err);
-    await channel.send(`LLM request failed: ${err}`);
+  } finally {
+    clearInterval(typing);
+  }
+}
+
+async function runAckPhase(messages: ChatMessage[], ctx: ToolContext): Promise<void> {
+  const result = await getProvider().chat(messages, ackPhaseTools);
+  if (result.toolCalls.length === 0) {
     return;
   }
+  messages.push({ role: 'assistant', content: result.content ?? '', toolCalls: result.toolCalls });
+  for (const call of result.toolCalls) {
+    const outcome = await dispatchTool(call, ctx);
+    messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
+  }
+}
 
-  const sent = await channel.send(reply);
+async function runReplyPhase(
+  messages: ChatMessage[],
+  ctx: ToolContext,
+  threadId: string,
+): Promise<void> {
+  for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
+    const result = await getProvider().chat(messages, replyPhaseTools);
 
-  insertMessage({
-    threadId,
-    discordId: sent.id,
-    role: 'assistant',
-    content: reply,
-    createdAt: sent.createdTimestamp,
-  });
+    if (result.toolCalls.length === 0) {
+      console.warn('[agent] model returned no tool call; sending nothing');
+      return;
+    }
+
+    messages.push({
+      role: 'assistant',
+      content: result.content ?? '',
+      toolCalls: result.toolCalls,
+    });
+
+    for (const call of result.toolCalls) {
+      const outcome = await dispatchTool(call, ctx);
+      messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
+    }
+  }
+  console.warn(`[agent] reached max rounds (${MAX_AGENT_ROUNDS}) for thread ${threadId}`);
+}
+
+function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
+  return enqueue(threadId, () => generateReply(channel, threadId));
 }
 
 async function handleInThread(message: Message, botId: string): Promise<void> {
