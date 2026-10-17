@@ -11,6 +11,8 @@ import { buildContext } from '../context/context.js';
 import { toChatMessages } from '../context/to-chat-messages.js';
 import { getProvider } from '../llm/index.js';
 import { enqueue } from '../llm/queue.js';
+import { dispatchTool, toolDefinitions } from '../llm/tools.js';
+import type { ChatMessage } from '../llm/provider.js';
 
 interface MessageInput {
   authorId: string;
@@ -19,9 +21,11 @@ interface MessageInput {
 }
 
 const THREAD_NAME_MAX = 100;
+const MAX_AGENT_ROUNDS = 5;
 const SYSTEM_PROMPT =
   'You are a helpful assistant chatting with one or more Discord users. ' +
-  'Each user message is prefixed with the speaker name. Reply concisely.';
+  'Each user message is prefixed with the speaker name. Reply concisely. ' +
+  'You can only reply by calling the send_message tool; always use it to respond.';
 
 function stripMention(content: string, botId: string): string {
   return content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
@@ -67,33 +71,43 @@ function formatReply(input: MessageInput, repliedTo: MessageInput | undefined): 
 
 async function generateReply(channel: SendableChannels, threadId: string): Promise<void> {
   const context = buildContext(threadId, { system: SYSTEM_PROMPT });
-  const messages = toChatMessages(context);
+  const messages: ChatMessage[] = toChatMessages(context);
 
   await channel.sendTyping();
   const typing = setInterval(() => {
     void channel.sendTyping().catch(() => undefined);
   }, 8000);
 
-  let reply: string;
+  const persist = (content: string, messageId: string, createdAt: number): void => {
+    insertMessage({ threadId, discordId: messageId, role: 'assistant', content, createdAt });
+  };
+
   try {
-    reply = await getProvider().chat(messages);
+    for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
+      const result = await getProvider().chat(messages, toolDefinitions);
+
+      if (result.toolCalls.length === 0) {
+        console.warn('[agent] model returned no tool call; sending nothing');
+        return;
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: result.content ?? '',
+        toolCalls: result.toolCalls,
+      });
+
+      for (const call of result.toolCalls) {
+        const outcome = await dispatchTool(call, { channel, onSent: persist });
+        messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
+      }
+    }
+    console.warn(`[agent] reached max rounds (${MAX_AGENT_ROUNDS}) for thread ${threadId}`);
   } catch (err) {
     console.error('LLM request failed:', err);
-    await channel.send(`LLM request failed: ${err}`);
-    return;
   } finally {
     clearInterval(typing);
   }
-
-  const sent = await channel.send(reply);
-
-  insertMessage({
-    threadId,
-    discordId: sent.id,
-    role: 'assistant',
-    content: reply,
-    createdAt: sent.createdTimestamp,
-  });
 }
 
 function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {
