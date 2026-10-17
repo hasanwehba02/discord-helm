@@ -11,7 +11,7 @@ import { buildContext } from '../context/context.js';
 import { toChatMessages } from '../context/to-chat-messages.js';
 import { getProvider } from '../llm/index.js';
 import { enqueue } from '../llm/queue.js';
-import { dispatchTool, toolDefinitions } from '../llm/tools.js';
+import { dispatchTool, ackPhaseTools, replyPhaseTools, type ToolContext } from '../llm/tools.js';
 import type { ChatMessage } from '../llm/provider.js';
 
 interface MessageInput {
@@ -25,7 +25,10 @@ const MAX_AGENT_ROUNDS = 5;
 const SYSTEM_PROMPT =
   'You are a helpful assistant chatting with one or more Discord users. ' +
   'Each user message is prefixed with the speaker name. Reply concisely. ' +
-  'You can only reply by calling the send_message tool; always use it to respond.';
+  'You reply in two steps. First, decide whether to send a short heads-up: ' +
+  'call acknowledge(note) if the answer will be long or take time, otherwise call proceed. ' +
+  'Then send your full answer with the send_message tool. ' +
+  'You can only send messages through these tools.';
 
 function stripMention(content: string, botId: string): string {
   return content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
@@ -81,33 +84,55 @@ async function generateReply(channel: SendableChannels, threadId: string): Promi
   const persist = (content: string, messageId: string, createdAt: number): void => {
     insertMessage({ threadId, discordId: messageId, role: 'assistant', content, createdAt });
   };
+  const ctx = { channel, onSent: persist };
 
   try {
-    for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
-      const result = await getProvider().chat(messages, toolDefinitions);
-
-      if (result.toolCalls.length === 0) {
-        console.warn('[agent] model returned no tool call; sending nothing');
-        return;
-      }
-
-      messages.push({
-        role: 'assistant',
-        content: result.content ?? '',
-        toolCalls: result.toolCalls,
-      });
-
-      for (const call of result.toolCalls) {
-        const outcome = await dispatchTool(call, { channel, onSent: persist });
-        messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
-      }
-    }
-    console.warn(`[agent] reached max rounds (${MAX_AGENT_ROUNDS}) for thread ${threadId}`);
+    await runAckPhase(messages, ctx);
+    await runReplyPhase(messages, ctx, threadId);
   } catch (err) {
     console.error('LLM request failed:', err);
   } finally {
     clearInterval(typing);
   }
+}
+
+async function runAckPhase(messages: ChatMessage[], ctx: ToolContext): Promise<void> {
+  const result = await getProvider().chat(messages, ackPhaseTools);
+  if (result.toolCalls.length === 0) {
+    return;
+  }
+  messages.push({ role: 'assistant', content: result.content ?? '', toolCalls: result.toolCalls });
+  for (const call of result.toolCalls) {
+    const outcome = await dispatchTool(call, ctx);
+    messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
+  }
+}
+
+async function runReplyPhase(
+  messages: ChatMessage[],
+  ctx: ToolContext,
+  threadId: string,
+): Promise<void> {
+  for (let round = 0; round < MAX_AGENT_ROUNDS; round++) {
+    const result = await getProvider().chat(messages, replyPhaseTools);
+
+    if (result.toolCalls.length === 0) {
+      console.warn('[agent] model returned no tool call; sending nothing');
+      return;
+    }
+
+    messages.push({
+      role: 'assistant',
+      content: result.content ?? '',
+      toolCalls: result.toolCalls,
+    });
+
+    for (const call of result.toolCalls) {
+      const outcome = await dispatchTool(call, ctx);
+      messages.push({ role: 'tool', content: outcome, toolCallId: call.id });
+    }
+  }
+  console.warn(`[agent] reached max rounds (${MAX_AGENT_ROUNDS}) for thread ${threadId}`);
 }
 
 function generateAndSend(channel: SendableChannels, threadId: string): Promise<void> {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchTool, toolDefinitions } from '../src/llm/tools.ts';
+import { dispatchTool, ackPhaseTools, replyPhaseTools } from '../src/llm/tools.ts';
 import type { ToolCall } from '../src/llm/provider.ts';
 
 interface FakeSent {
@@ -64,8 +64,33 @@ test('unknown tool returns an error', async () => {
 });
 
 test('send_message tool is defined with a required content parameter', () => {
-  const def = toolDefinitions.find((t) => t.name === 'send_message');
+  const def = replyPhaseTools.find((t) => t.name === 'send_message');
   assert.ok(def);
   const params = def.parameters as { required?: string[] };
   assert.deepEqual(params.required, ['content']);
+});
+
+test('ack phase offers acknowledge and proceed, not send_message', () => {
+  const names = ackPhaseTools.map((t) => t.name).sort();
+  assert.deepEqual(names, ['acknowledge', 'proceed']);
+});
+
+test('reply phase offers only send_message', () => {
+  const names = replyPhaseTools.map((t) => t.name);
+  assert.deepEqual(names, ['send_message']);
+});
+
+test('acknowledge sends the note and asks for the full answer', async () => {
+  const { ctx, sends, persisted } = fakeContext();
+  const out = await dispatchTool(call('acknowledge', { note: 'まとめますね' }), ctx);
+  assert.match(out, /full answer/i);
+  assert.deepEqual(sends, ['まとめますね']);
+  assert.deepEqual(persisted, ['まとめますね']);
+});
+
+test('proceed sends nothing and advances to the answer', async () => {
+  const { ctx, sends } = fakeContext();
+  const out = await dispatchTool(call('proceed', {}), ctx);
+  assert.match(out, /proceed/i);
+  assert.deepEqual(sends, []);
 });
