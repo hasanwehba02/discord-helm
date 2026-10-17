@@ -62,6 +62,7 @@ async function sendChunked(text: string, ctx: ToolContext): Promise<void> {
   for (const chunk of chunks) {
     const sent = await ctx.channel.send(chunk);
     ctx.onSent(chunk, sent.id, sent.createdTimestamp);
+    void ctx.channel.sendTyping().catch(() => undefined);
   }
 }
 

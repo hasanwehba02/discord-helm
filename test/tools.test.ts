@@ -18,6 +18,7 @@ function fakeContext() {
       counter += 1;
       return { id: `m${counter}`, createdTimestamp: 1000 + counter };
     },
+    sendTyping: async (): Promise<void> => {},
   };
   const ctx = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
