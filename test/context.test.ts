@@ -7,6 +7,8 @@ import { join } from 'node:path';
 const tempDir = mkdtempSync(join(tmpdir(), 'discord-llm-test-'));
 process.env.DB_PATH = join(tempDir, 'test.sqlite');
 process.env.LLM_MODEL = 'test-model';
+process.env.DISCORD_TOKEN = 'test-token';
+process.env.DISCORD_CLIENT_ID = 'test-client-id';
 
 const { insertMessage, getThreadMessages } = await import('../src/db/messages.ts');
 const { closeDb } = await import('../src/db/index.ts');
