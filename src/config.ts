@@ -28,4 +28,5 @@ export const config = {
   llmModel: required('LLM_MODEL'),
   llmApiKey: process.env.LLM_API_KEY?.trim() || undefined,
   llmTemperature: optionalNumber('LLM_TEMPERATURE'),
+  llmTimeoutMs: optionalNumber('LLM_TIMEOUT_MS') ?? 120_000,
 } as const;

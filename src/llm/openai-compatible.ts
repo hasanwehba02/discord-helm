@@ -11,6 +11,7 @@ export interface OpenAICompatibleOptions {
   model: string;
   apiKey?: string;
   temperature?: number;
+  timeoutMs?: number;
 }
 
 interface RawToolCall {
@@ -87,11 +88,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
       body.tools = serializeTools(tools);
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeoutMs = this.options.timeoutMs ?? 120_000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`LLM request timed out after ${timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
