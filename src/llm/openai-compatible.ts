@@ -1,10 +1,4 @@
-import type {
-  ChatMessage,
-  ChatResult,
-  LLMProvider,
-  ToolCall,
-  ToolDefinition,
-} from './provider.js';
+import type { ChatMessage, ChatResult, LLMProvider, ToolCall, ToolDefinition } from './provider.js';
 
 export interface OpenAICompatibleOptions {
   baseUrl: string;
@@ -39,7 +33,7 @@ function serializeMessage(message: ChatMessage): Record<string, unknown> {
   return out;
 }
 
-function serializeTools(tools: ToolDefinition[]): Record<string, unknown>[] {
+function serializeTools(tools: readonly ToolDefinition[]): Record<string, unknown>[] {
   return tools.map((tool) => ({
     type: 'function',
     function: {
@@ -68,7 +62,7 @@ function parseToolCalls(raw: RawToolCall[] | undefined): ToolCall[] {
 export class OpenAICompatibleProvider implements LLMProvider {
   constructor(private readonly options: OpenAICompatibleOptions) {}
 
-  async chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<ChatResult> {
+  async chat(messages: ChatMessage[], tools?: readonly ToolDefinition[]): Promise<ChatResult> {
     const url = `${this.options.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
     const headers: Record<string, string> = { 'content-type': 'application/json' };

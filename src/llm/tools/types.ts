@@ -11,8 +11,7 @@ export type ToolHandler = (
   ctx: ToolContext,
 ) => Promise<string> | string;
 
-export interface ToolModule {
-  name: string;
+export interface Tool {
   definition: ToolDefinition;
   execute: ToolHandler;
 }

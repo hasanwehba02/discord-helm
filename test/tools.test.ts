@@ -1,15 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  dispatchTool,
-  ackPhaseTools,
-  replyPhaseTools,
-  acknowledgeTool,
-  proceedTool,
-  sendMessageTool,
-  ToolRegistry,
-  tools,
-} from '../src/llm/tools.ts';
+import { ackTools, replyTools } from '../src/llm/tools/index.ts';
+import { ToolSet } from '../src/llm/tools/tool-set.ts';
 import type { ToolCall } from '../src/llm/provider.ts';
 
 interface FakeSent {
@@ -52,7 +44,7 @@ function call(name: string, args: unknown): ToolCall {
 
 test('send_message sends short content as a single message', async () => {
   const { ctx, sends, persisted, getTypingCount } = fakeContext();
-  const out = await dispatchTool(call('send_message', { content: 'hello' }), ctx);
+  const out = await replyTools.dispatch(call('send_message', { content: 'hello' }), ctx);
   assert.equal(out, 'Message sent.');
   assert.deepEqual(sends, ['hello']);
   assert.deepEqual(persisted, [{ content: 'hello', messageId: 'm1', createdAt: 1001 }]);
@@ -62,7 +54,7 @@ test('send_message sends short content as a single message', async () => {
 test('send_message splits content longer than 2000 chars', async () => {
   const { ctx, sends, persisted } = fakeContext();
   const long = 'a'.repeat(2500);
-  await dispatchTool(call('send_message', { content: long }), ctx);
+  await replyTools.dispatch(call('send_message', { content: long }), ctx);
   assert.equal(sends.length, 2);
   for (const s of sends) assert.ok(s.length <= 2000);
   assert.equal(sends.join('').length, 2500);
@@ -76,7 +68,7 @@ test('send_message splits on newline boundaries when content exceeds limit', asy
   const part1 = 'a'.repeat(1500);
   const part2 = 'b'.repeat(1000);
   const content = `${part1}\n${part2}`;
-  await dispatchTool(call('send_message', { content }), ctx);
+  await replyTools.dispatch(call('send_message', { content }), ctx);
   assert.equal(sends.length, 2);
   assert.equal(sends[0], part1);
   assert.equal(sends[1], part2);
@@ -84,28 +76,32 @@ test('send_message splits on newline boundaries when content exceeds limit', asy
 
 test('send_message with empty content returns an error and sends nothing', async () => {
   const { ctx, sends } = fakeContext();
-  const out = await dispatchTool(call('send_message', {}), ctx);
+  const out = await replyTools.dispatch(call('send_message', {}), ctx);
   assert.match(out, /empty/i);
   assert.deepEqual(sends, []);
 });
 
 test('send_message with empty string or non-string content returns an error', async () => {
   const { ctx, sends } = fakeContext();
-  const outEmpty = await dispatchTool(call('send_message', { content: '' }), ctx);
+  const outEmpty = await replyTools.dispatch(call('send_message', { content: '' }), ctx);
   assert.match(outEmpty, /empty/i);
 
-  const outNull = await dispatchTool(call('send_message', { content: null }), ctx);
+  const outNull = await replyTools.dispatch(call('send_message', { content: null }), ctx);
   assert.match(outNull, /empty/i);
   assert.deepEqual(sends, []);
 });
 
 test('unknown tool returns an error', async () => {
   const { ctx } = fakeContext();
-  const out = await dispatchTool(call('do_something', {}), ctx);
+  const out = await replyTools.dispatch(call('do_something', {}), ctx);
   assert.match(out, /Unknown tool/);
 });
 
 test('tool descriptors define required parameters and valid schemas', () => {
+  const sendMessageTool = replyTools.definitions[0];
+  const acknowledgeTool = ackTools.definitions[0];
+  const proceedTool = ackTools.definitions[1];
+
   assert.equal(sendMessageTool.name, 'send_message');
   const sendParams = sendMessageTool.parameters as { required?: string[] };
   assert.deepEqual(sendParams.required, ['content']);
@@ -119,20 +115,30 @@ test('tool descriptors define required parameters and valid schemas', () => {
 });
 
 test('ack phase offers acknowledge and proceed, not send_message', () => {
-  assert.deepEqual(ackPhaseTools, [acknowledgeTool, proceedTool]);
-  const names = ackPhaseTools.map((t) => t.name);
+  const names = ackTools.definitions.map((tool) => tool.name);
   assert.deepEqual(names, ['acknowledge', 'proceed']);
 });
 
 test('reply phase offers only send_message', () => {
-  assert.deepEqual(replyPhaseTools, [sendMessageTool]);
-  const names = replyPhaseTools.map((t) => t.name);
+  const names = replyTools.definitions.map((tool) => tool.name);
   assert.deepEqual(names, ['send_message']);
+});
+
+test('each phase rejects tools that it did not offer', async () => {
+  const { ctx } = fakeContext();
+  assert.equal(
+    await ackTools.dispatch(call('send_message', { content: 'hello' }), ctx),
+    'Unknown tool: send_message',
+  );
+  assert.equal(
+    await replyTools.dispatch(call('acknowledge', { note: 'hello' }), ctx),
+    'Unknown tool: acknowledge',
+  );
 });
 
 test('acknowledge sends the note and asks for the full answer', async () => {
   const { ctx, sends, persisted } = fakeContext();
-  const out = await dispatchTool(call('acknowledge', { note: 'まとめますね' }), ctx);
+  const out = await ackTools.dispatch(call('acknowledge', { note: 'まとめますね' }), ctx);
   assert.match(out, /full answer/i);
   assert.deepEqual(sends, ['まとめますね']);
   assert.deepEqual(
@@ -143,59 +149,57 @@ test('acknowledge sends the note and asks for the full answer', async () => {
 
 test('acknowledge with empty or whitespace-only note sends nothing', async () => {
   const { ctx, sends } = fakeContext();
-  const outWhitespace = await dispatchTool(call('acknowledge', { note: '   \n  ' }), ctx);
+  const outWhitespace = await ackTools.dispatch(call('acknowledge', { note: '   \n  ' }), ctx);
   assert.match(outWhitespace, /full answer/i);
   assert.deepEqual(sends, []);
 
-  const outEmpty = await dispatchTool(call('acknowledge', { note: '' }), ctx);
+  const outEmpty = await ackTools.dispatch(call('acknowledge', { note: '' }), ctx);
   assert.match(outEmpty, /full answer/i);
   assert.deepEqual(sends, []);
 
-  const outMissing = await dispatchTool(call('acknowledge', {}), ctx);
+  const outMissing = await ackTools.dispatch(call('acknowledge', {}), ctx);
   assert.match(outMissing, /full answer/i);
   assert.deepEqual(sends, []);
 });
 
 test('proceed sends nothing and advances to the answer', async () => {
   const { ctx, sends } = fakeContext();
-  const out = await dispatchTool(call('proceed', {}), ctx);
+  const out = await ackTools.dispatch(call('proceed', {}), ctx);
   assert.match(out, /proceed/i);
   assert.deepEqual(sends, []);
 });
 
-test('ToolRegistry dispatches tools by name and passes parsed arguments', async () => {
-  const customRegistry = new ToolRegistry();
+test('ToolSet dispatches tools by name and passes parsed arguments', async () => {
   let receivedArgs: Record<string, unknown> | null = null;
-  customRegistry.register({
-    name: 'custom_tool',
-    definition: {
-      name: 'custom_tool',
-      description: 'A test custom tool',
-      parameters: { type: 'object', properties: {} },
+  const customTools = new ToolSet([
+    {
+      definition: {
+        name: 'custom_tool',
+        description: 'A test custom tool',
+        parameters: { type: 'object', properties: {} },
+      },
+      execute: (args) => {
+        receivedArgs = args;
+        return 'custom tool output';
+      },
     },
-    execute: (args) => {
-      receivedArgs = args;
-      return 'custom tool output';
-    },
-  });
+  ]);
 
   const { ctx } = fakeContext();
-  const res = await customRegistry.dispatch(call('custom_tool', { foo: 'bar' }), ctx);
+  const res = await customTools.dispatch(call('custom_tool', { foo: 'bar' }), ctx);
   assert.equal(res, 'custom tool output');
   assert.deepEqual(receivedArgs, { foo: 'bar' });
 });
 
-test('ToolRegistry returns error for unregistered tool', async () => {
-  const emptyRegistry = new ToolRegistry();
+test('ToolSet returns error for a tool outside the set', async () => {
+  const emptyTools = new ToolSet([]);
   const { ctx } = fakeContext();
-  const res = await emptyRegistry.dispatch(call('nonexistent', {}), ctx);
+  const res = await emptyTools.dispatch(call('nonexistent', {}), ctx);
   assert.equal(res, 'Unknown tool: nonexistent');
 });
 
-test('ToolRegistry rejects duplicate tool registrations', () => {
-  const customRegistry = new ToolRegistry();
+test('ToolSet rejects duplicate tool definitions', () => {
   const dummyTool = {
-    name: 'sample',
     definition: {
       name: 'sample',
       description: 'sample',
@@ -204,33 +208,29 @@ test('ToolRegistry rejects duplicate tool registrations', () => {
     execute: () => 'ok',
   };
 
-  customRegistry.register(dummyTool);
-  assert.throws(() => customRegistry.register(dummyTool), /Tool already registered: sample/);
-
-  assert.throws(() => new ToolRegistry([dummyTool, dummyTool]), /Tool already registered: sample/);
+  assert.throws(() => new ToolSet([dummyTool, dummyTool]), /Tool already registered: sample/);
 });
 
-test('dispatchTool handles malformed JSON arguments gracefully', async () => {
+test('ToolSet handles malformed JSON arguments gracefully', async () => {
   const { ctx, sends } = fakeContext();
-  const outAck = await dispatchTool(
+  const outAck = await ackTools.dispatch(
     { id: '1', name: 'acknowledge', arguments: '{invalid json' },
     ctx,
   );
   assert.match(outAck, /full answer/i);
   assert.deepEqual(sends, []);
 
-  const outSend = await dispatchTool(
+  const outSend = await replyTools.dispatch(
     { id: '2', name: 'send_message', arguments: 'not json at all' },
     ctx,
   );
   assert.match(outSend, /empty/i);
 });
 
-test('tool modules export self-contained definitions and execute handlers', () => {
-  for (const tool of tools) {
-    assert.ok(tool.name, 'tool must have a name');
-    assert.equal(tool.name, tool.definition.name, 'tool name must match definition name');
-    assert.ok(tool.definition.description, 'tool must have a description');
-    assert.equal(typeof tool.execute, 'function', 'tool must have an execute function');
+test('tool sets expose self-contained definitions', () => {
+  for (const definition of [...ackTools.definitions, ...replyTools.definitions]) {
+    assert.ok(definition.name, 'tool must have a name');
+    assert.ok(definition.description, 'tool must have a description');
+    assert.ok(definition.parameters, 'tool must have a parameter schema');
   }
 });

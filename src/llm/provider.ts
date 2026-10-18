@@ -26,5 +26,5 @@ export interface ChatResult {
 }
 
 export interface LLMProvider {
-  chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<ChatResult>;
+  chat(messages: ChatMessage[], tools?: readonly ToolDefinition[]): Promise<ChatResult>;
 }
