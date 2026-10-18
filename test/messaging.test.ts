@@ -38,6 +38,15 @@ test('sendChunked sends short content as a single Discord message', async () => 
   assert.equal(getTypingCount(), 1);
 });
 
+test('sendChunked does not send whitespace-only content', async () => {
+  const { channel, onSent, sends, persisted, getTypingCount } = fakeMessaging();
+  await sendChunked('\n', channel, onSent);
+
+  assert.deepEqual(sends, []);
+  assert.deepEqual(persisted, []);
+  assert.equal(getTypingCount(), 0);
+});
+
 test('sendChunked splits content longer than the Discord limit', async () => {
   const { channel, onSent, sends, persisted } = fakeMessaging();
   await sendChunked('a'.repeat(2500), channel, onSent);

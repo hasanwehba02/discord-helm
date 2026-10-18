@@ -25,6 +25,7 @@ export async function sendChunked(
 ): Promise<void> {
   const chunks = chunkContent(text);
   for (const chunk of chunks) {
+    if (!chunk.trim()) continue;
     const sent = await channel.send(chunk);
     onSent(chunk, sent.id, sent.createdTimestamp);
     void channel.sendTyping().catch(() => undefined);

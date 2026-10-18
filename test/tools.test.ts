@@ -36,10 +36,13 @@ test('send_message with empty content returns an error and sends nothing', async
   assert.deepEqual(sends, []);
 });
 
-test('send_message with empty string or non-string content returns an error', async () => {
+test('send_message with empty, whitespace-only, or non-string content returns an error', async () => {
   const { ctx, sends } = fakeContext();
   const outEmpty = await replyTools.dispatch(call('send_message', { content: '' }), ctx);
   assert.match(outEmpty, /empty/i);
+
+  const outWhitespace = await replyTools.dispatch(call('send_message', { content: '\n' }), ctx);
+  assert.match(outWhitespace, /empty/i);
 
   const outNull = await replyTools.dispatch(call('send_message', { content: null }), ctx);
   assert.match(outNull, /empty/i);
