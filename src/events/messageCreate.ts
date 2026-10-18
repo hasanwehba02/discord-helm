@@ -5,8 +5,10 @@ import { buildContext } from '../context/context.js';
 import { toChatMessages } from '../context/to-chat-messages.js';
 import { getProvider } from '../llm/index.js';
 import { enqueue } from '../llm/queue.js';
-import { ackTools, replyTools, type ToolContext } from '../llm/tools/index.js';
+import { ackTools, replyTools } from '../llm/tools/index.js';
 import type { ChatMessage } from '../llm/provider.js';
+import type { ToolContext } from '../llm/tool.js';
+import { sendChunked } from '../discord/messaging.js';
 
 interface MessageInput {
   authorId: string;
@@ -78,7 +80,9 @@ async function generateReply(channel: SendableChannels, threadId: string): Promi
   const persist = (content: string, messageId: string, createdAt: number): void => {
     insertMessage({ threadId, discordId: messageId, role: 'assistant', content, createdAt });
   };
-  const ctx = { channel, onSent: persist };
+  const ctx: ToolContext = {
+    send: (content) => sendChunked(content, channel, persist),
+  };
 
   try {
     await runAckPhase(messages, ctx);

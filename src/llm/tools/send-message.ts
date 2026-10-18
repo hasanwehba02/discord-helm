@@ -1,5 +1,4 @@
-import type { ToolContext, Tool } from './types.js';
-import { sendChunked } from './messaging.js';
+import type { ToolContext, Tool } from '../tool.js';
 
 export const sendMessage = {
   definition: {
@@ -18,7 +17,7 @@ export const sendMessage = {
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const content = typeof args.content === 'string' ? args.content : '';
     if (!content) return 'Error: content was empty.';
-    await sendChunked(content, ctx);
+    await ctx.send(content);
     return 'Message sent.';
   },
 } satisfies Tool;

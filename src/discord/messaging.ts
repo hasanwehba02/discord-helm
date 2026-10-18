@@ -1,6 +1,8 @@
-import type { ToolContext } from './types.js';
+import type { SendableChannels } from 'discord.js';
 
 export const MAX_DISCORD_CONTENT = 2000;
+
+export type OnMessageSent = (content: string, messageId: string, createdAt: number) => void;
 
 export function chunkContent(content: string, limit: number = MAX_DISCORD_CONTENT): string[] {
   if (content.length <= limit) return [content];
@@ -16,11 +18,15 @@ export function chunkContent(content: string, limit: number = MAX_DISCORD_CONTEN
   return chunks;
 }
 
-export async function sendChunked(text: string, ctx: ToolContext): Promise<void> {
-  const chunks = chunkContent(text, MAX_DISCORD_CONTENT);
+export async function sendChunked(
+  text: string,
+  channel: SendableChannels,
+  onSent: OnMessageSent,
+): Promise<void> {
+  const chunks = chunkContent(text);
   for (const chunk of chunks) {
-    const sent = await ctx.channel.send(chunk);
-    ctx.onSent(chunk, sent.id, sent.createdTimestamp);
-    void ctx.channel.sendTyping().catch(() => undefined);
+    const sent = await channel.send(chunk);
+    onSent(chunk, sent.id, sent.createdTimestamp);
+    void channel.sendTyping().catch(() => undefined);
   }
 }

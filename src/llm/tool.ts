@@ -1,9 +1,7 @@
-import type { SendableChannels } from 'discord.js';
-import type { ToolDefinition } from '../provider.js';
+import type { ToolDefinition } from './provider.js';
 
 export interface ToolContext {
-  channel: SendableChannels;
-  onSent: (content: string, messageId: string, createdAt: number) => void;
+  send(content: string): Promise<void>;
 }
 
 export type ToolHandler = (

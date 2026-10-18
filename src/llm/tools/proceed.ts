@@ -1,4 +1,4 @@
-import type { Tool } from './types.js';
+import type { Tool } from '../tool.js';
 
 export const proceed = {
   definition: {

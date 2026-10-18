@@ -1,5 +1,5 @@
-import type { ToolCall, ToolDefinition } from '../provider.js';
-import type { Tool, ToolContext } from './types.js';
+import type { ToolCall, ToolDefinition } from './provider.js';
+import type { Tool, ToolContext } from './tool.js';
 
 function parseArgs(raw: string): Record<string, unknown> {
   try {

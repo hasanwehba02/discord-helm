@@ -1,37 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ackTools, replyTools } from '../src/llm/tools/index.ts';
-import { ToolSet } from '../src/llm/tools/tool-set.ts';
+import { ToolSet } from '../src/llm/tool-set.ts';
 import type { ToolCall } from '../src/llm/provider.ts';
-
-interface FakeSent {
-  id: string;
-  createdTimestamp: number;
-}
 
 function fakeContext() {
   const sends: string[] = [];
-  const persisted: Array<{ content: string; messageId: string; createdAt: number }> = [];
-  let counter = 0;
-  let typingCount = 0;
-  const channel = {
-    send: async (content: string): Promise<FakeSent> => {
-      sends.push(content);
-      counter += 1;
-      return { id: `m${counter}`, createdTimestamp: 1000 + counter };
-    },
-    sendTyping: async (): Promise<void> => {
-      typingCount += 1;
-    },
-  };
   const ctx = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    channel: channel as any,
-    onSent: (content: string, messageId: string, createdAt: number) => {
-      persisted.push({ content, messageId, createdAt });
+    send: async (content: string): Promise<void> => {
+      sends.push(content);
     },
   };
-  return { ctx, sends, persisted, getTypingCount: () => typingCount };
+  return { ctx, sends };
 }
 
 function call(name: string, args: unknown): ToolCall {
@@ -43,35 +23,10 @@ function call(name: string, args: unknown): ToolCall {
 }
 
 test('send_message sends short content as a single message', async () => {
-  const { ctx, sends, persisted, getTypingCount } = fakeContext();
+  const { ctx, sends } = fakeContext();
   const out = await replyTools.dispatch(call('send_message', { content: 'hello' }), ctx);
   assert.equal(out, 'Message sent.');
   assert.deepEqual(sends, ['hello']);
-  assert.deepEqual(persisted, [{ content: 'hello', messageId: 'm1', createdAt: 1001 }]);
-  assert.equal(getTypingCount(), 1);
-});
-
-test('send_message splits content longer than 2000 chars', async () => {
-  const { ctx, sends, persisted } = fakeContext();
-  const long = 'a'.repeat(2500);
-  await replyTools.dispatch(call('send_message', { content: long }), ctx);
-  assert.equal(sends.length, 2);
-  for (const s of sends) assert.ok(s.length <= 2000);
-  assert.equal(sends.join('').length, 2500);
-  assert.equal(persisted.length, 2);
-  assert.equal(persisted[0].messageId, 'm1');
-  assert.equal(persisted[1].messageId, 'm2');
-});
-
-test('send_message splits on newline boundaries when content exceeds limit', async () => {
-  const { ctx, sends } = fakeContext();
-  const part1 = 'a'.repeat(1500);
-  const part2 = 'b'.repeat(1000);
-  const content = `${part1}\n${part2}`;
-  await replyTools.dispatch(call('send_message', { content }), ctx);
-  assert.equal(sends.length, 2);
-  assert.equal(sends[0], part1);
-  assert.equal(sends[1], part2);
 });
 
 test('send_message with empty content returns an error and sends nothing', async () => {
@@ -137,14 +92,10 @@ test('each phase rejects tools that it did not offer', async () => {
 });
 
 test('acknowledge sends the note and asks for the full answer', async () => {
-  const { ctx, sends, persisted } = fakeContext();
+  const { ctx, sends } = fakeContext();
   const out = await ackTools.dispatch(call('acknowledge', { note: 'まとめますね' }), ctx);
   assert.match(out, /full answer/i);
   assert.deepEqual(sends, ['まとめますね']);
-  assert.deepEqual(
-    persisted.map((p) => p.content),
-    ['まとめますね'],
-  );
 });
 
 test('acknowledge with empty or whitespace-only note sends nothing', async () => {

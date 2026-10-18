@@ -1,5 +1,4 @@
-import type { ToolContext, Tool } from './types.js';
-import { sendChunked } from './messaging.js';
+import type { ToolContext, Tool } from '../tool.js';
 
 export const acknowledge = {
   definition: {
@@ -18,7 +17,7 @@ export const acknowledge = {
   },
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const note = typeof args.note === 'string' ? args.note.trim() : '';
-    if (note) await sendChunked(note, ctx);
+    if (note) await ctx.send(note);
     return 'Acknowledged. Now produce the full answer.';
   },
 } satisfies Tool;
